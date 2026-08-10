@@ -14,7 +14,7 @@ Gem::Specification.new do |spec|
   spec.description   = <<~EOM
     SmartTodo is a tool designed to assign specific users on todo's task
     written in your codebase and help assignees be reminded when it's time to commit
-    to their todo's.
+    to their todo's. Scans Ruby, Python, and Go source out of the box.
   EOM
   spec.homepage      = "https://github.com/shopify/smart_todo"
   spec.license       = "MIT"

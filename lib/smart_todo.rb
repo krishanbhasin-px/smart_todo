@@ -3,6 +3,11 @@
 require "prism"
 require "smart_todo/version"
 require "smart_todo/events"
+require "smart_todo/source_adapters/base"
+require "smart_todo/source_adapters/ruby"
+require "smart_todo/source_adapters/python"
+require "smart_todo/source_adapters/go"
+require "smart_todo/source_adapters"
 
 module SmartTodo
   autoload :SlackClient,              "smart_todo/slack_client"

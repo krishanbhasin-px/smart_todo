@@ -21,17 +21,20 @@ module SmartTodo
 
       paths << "." if paths.empty?
 
-      comment_parser = CommentParser.new
+      comment_parsers = Hash.new { |hash, adapter| hash[adapter] = CommentParser.new(adapter: adapter) }
+
       paths.each do |path|
         normalize_path(path).each do |filepath|
-          comment_parser.parse_file(filepath)
+          comment_parsers[adapter_for(filepath)].parse_file(filepath)
 
           $stdout.print(".")
           $stdout.flush
         end
       end
 
-      process_dispatches(process_todos(comment_parser.todos))
+      todos = comment_parsers.each_value.flat_map(&:todos)
+
+      process_dispatches(process_todos(todos))
 
       if @errors.empty?
         0
@@ -78,13 +81,21 @@ module SmartTodo
     end
 
     # @param path [String] a path to a file or directory
-    # @return [Array<String>] all the directories the parser should run on
+    # @return [Array<String>] all the files the parser should run on
     def normalize_path(path)
       if File.file?(path)
         [path]
       else
-        Dir["#{path}/**/*.rb"]
+        SourceAdapters.all.flat_map { |adapter| Dir["#{path}/#{adapter.glob_pattern}"] }.sort
       end
+    end
+
+    # @param filepath [String]
+    # @return [Class] a SourceAdapters::Base subclass
+    # @raise [ArgumentError] if no adapter is registered for the file's extension
+    def adapter_for(filepath)
+      SourceAdapters.for_extension(File.extname(filepath)) ||
+        raise(ArgumentError, "No SmartTodo source adapter registered for #{filepath.inspect}")
     end
 
     def process_todos(todos)
