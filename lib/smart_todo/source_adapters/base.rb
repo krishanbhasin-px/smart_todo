@@ -38,7 +38,7 @@ module SmartTodo
         # @return [String] a glob pattern (relative to a directory) matching this
         #   language's source files.
         def glob_pattern
-          "**/*#{extensions.first}"
+          "**/*{#{extensions.join(",")}}"
         end
       end
     end

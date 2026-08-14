@@ -44,7 +44,8 @@ Multi-language scanning
 ------------------------
 SmartTodo can scan Ruby, Python, and Go source in the same run — pass a directory
 containing any mix of `.rb`, `.py`, and `.go` files and each is matched against its own
-comment syntax (`#` for Ruby/Python, `//`/`/* */` for Go). Only comment *extraction* is
+comment syntax (`#` for Ruby/Python, `//` line comments for Go — Go TODOs must use `//`,
+not `/* */` block comments). Only comment *extraction* is
 language-specific; the `on: ..., to: ...` metadata is always parsed as a small Ruby
 expression, so the syntax above is identical regardless of which language the comment
 lives in — including in a Python file:

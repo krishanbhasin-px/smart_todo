@@ -21,15 +21,11 @@ module SmartTodo
 
       paths << "." if paths.empty?
 
+      filepaths = paths.flat_map { |path| normalize_path(path) }
       comment_parsers = Hash.new { |hash, adapter| hash[adapter] = CommentParser.new(adapter: adapter) }
 
-      paths.each do |path|
-        normalize_path(path).each do |filepath|
-          comment_parsers[adapter_for(filepath)].parse_file(filepath)
-
-          $stdout.print(".")
-          $stdout.flush
-        end
+      filepaths.group_by { |filepath| adapter_for(filepath) }.each do |adapter, adapter_filepaths|
+        scan_files(adapter, adapter_filepaths, comment_parsers[adapter])
       end
 
       todos = comment_parsers.each_value.flat_map(&:todos)
@@ -86,16 +82,15 @@ module SmartTodo
       if File.file?(path)
         [path]
       else
-        SourceAdapters.all.flat_map { |adapter| Dir["#{path}/#{adapter.glob_pattern}"] }.sort
+        extensions = SourceAdapters.all.flat_map(&:extensions).join(",")
+        Dir["#{path}/**/*{#{extensions}}"].sort
       end
     end
 
     # @param filepath [String]
     # @return [Class] a SourceAdapters::Base subclass
-    # @raise [ArgumentError] if no adapter is registered for the file's extension
     def adapter_for(filepath)
-      SourceAdapters.for_extension(File.extname(filepath)) ||
-        raise(ArgumentError, "No SmartTodo source adapter registered for #{filepath.inspect}")
+      SourceAdapters.for_extension(File.extname(filepath)) || SourceAdapters::Ruby
     end
 
     def process_todos(todos)
@@ -129,6 +124,40 @@ module SmartTodo
     end
 
     private
+
+    # @param adapter [Class] a SourceAdapters::Base subclass
+    # @param filepaths [Array<String>] every file to scan with this adapter
+    # @param parser [CommentParser]
+    def scan_files(adapter, filepaths, parser)
+      if adapter.respond_to?(:extract_comments_from_files)
+        begin
+          comments_by_file = adapter.extract_comments_from_files(filepaths)
+
+          filepaths.each do |filepath|
+            parser.parse_extracted(comments_by_file.fetch(filepath), filepath)
+
+            $stdout.print(".")
+            $stdout.flush
+          end
+
+          return
+        rescue => e
+          @errors << "Error while batch scanning with #{adapter}: #{e.message}"
+        end
+      end
+
+      filepaths.each do |filepath|
+        begin
+          parser.parse_file(filepath)
+        rescue => e
+          @errors << "Error while scanning #{filepath}: #{e.message}"
+          next
+        end
+
+        $stdout.print(".")
+        $stdout.flush
+      end
+    end
 
     # @param event_message [String] the original event message
     # @param todo [Todo] the todo object that may contain context

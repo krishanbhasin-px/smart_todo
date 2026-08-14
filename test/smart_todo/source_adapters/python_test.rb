@@ -55,7 +55,7 @@ module SmartTodo
       end
 
       def test_ignores_hash_inside_an_f_string
-        source = <<~'PYTHON'
+        source = <<~PYTHON
           name = "world"
           x = f"hello {name} # not a comment"
         PYTHON
@@ -97,6 +97,66 @@ module SmartTodo
           assert_equal(:date, todos[0].events[0].method_name)
           assert_equal(["dev@example.com"], todos[0].assignees)
           assert_equal("Remove this once done.\n", todos[0].comment)
+        end
+      end
+
+      def test_raises_when_source_has_an_invalid_encoding_byte_and_no_pep263_cookie
+        source = "# invalid byte on this line: \xe9\ndef hello():\n    pass\n"
+
+        assert_raises(Python::Error) do
+          Python.extract_comments(source)
+        end
+      end
+
+      def test_extract_comments_from_files_batches_multiple_files_in_one_process
+        Tempfile.open(["file_a", ".py"]) do |file_a|
+          file_a.write(<<~PYTHON)
+            # TODO(on: date('2024-06-01'), to: 'a@example.com')
+            def a():
+                pass
+          PYTHON
+          file_a.rewind
+
+          Tempfile.open(["file_b", ".py"]) do |file_b|
+            file_b.write(<<~PYTHON)
+              # TODO(on: date('2024-06-01'), to: 'b@example.com')
+              def b():
+                  pass
+            PYTHON
+            file_b.rewind
+
+            comments_by_file = Python.extract_comments_from_files([file_a.path, file_b.path])
+
+            assert_equal(
+              ["# TODO(on: date('2024-06-01'), to: 'a@example.com')"],
+              comments_by_file[file_a.path],
+            )
+            assert_equal(
+              ["# TODO(on: date('2024-06-01'), to: 'b@example.com')"],
+              comments_by_file[file_b.path],
+            )
+          end
+        end
+      end
+
+      def test_extract_comments_from_files_raises_when_one_file_fails_to_tokenize_alongside_one_that_succeeds
+        Tempfile.open(["good", ".py"]) do |good|
+          good.write(<<~PYTHON)
+            # TODO(on: date('2024-06-01'), to: 'dev@example.com')
+            def hello():
+                pass
+          PYTHON
+          good.rewind
+
+          Tempfile.open(["bad", ".py"]) do |bad|
+            bad.binmode
+            bad.write("# invalid byte: \xe9\ndef hello():\n    pass\n")
+            bad.rewind
+
+            assert_raises(Python::Error) do
+              Python.extract_comments_from_files([good.path, bad.path])
+            end
+          end
         end
       end
     end

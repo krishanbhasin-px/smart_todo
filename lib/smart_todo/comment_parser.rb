@@ -13,8 +13,8 @@ module SmartTodo
     def initialize(adapter: SourceAdapters::Ruby)
       @adapter = adapter
       @todos = []
-      @tag_pattern = /^#{Regexp.escape(adapter.comment_marker)}\s(#{SUPPORTED_TAGS.join("|")})\(/
-      @indent_pattern = /^#{Regexp.escape(adapter.comment_marker)}(\s*)/
+      @tag_pattern = /\A#{Regexp.escape(adapter.comment_marker)}\s(#{SUPPORTED_TAGS.join("|")})\(/
+      @indent_pattern = /\A#{Regexp.escape(adapter.comment_marker)}(\s*)/
     end
 
     def parse(source, filepath = "-e")
@@ -23,6 +23,13 @@ module SmartTodo
 
     def parse_file(filepath)
       parse_comments(@adapter.extract_comments_from_file(filepath), filepath)
+    end
+
+    # @param comments [Array<String>] comments already extracted by the adapter, e.g. via
+    #   a batch extraction method like +Python.extract_comments_from_files+.
+    # @param filepath [String]
+    def parse_extracted(comments, filepath)
+      parse_comments(comments, filepath)
     end
 
     class << self
@@ -42,7 +49,8 @@ module SmartTodo
       comments.each do |source|
         if source.match?(@tag_pattern)
           todos << current_todo if current_todo
-          current_todo = Todo.new(source, filepath, marker: @adapter.comment_marker)
+          indent = source[@indent_pattern, 1].length
+          current_todo = Todo.new(source, filepath, marker: @adapter.comment_marker, indent: indent)
         elsif current_todo && (indent = source[@indent_pattern, 1]&.length) && (indent - current_todo.indent == 2)
           current_todo << "#{source[(indent + marker_length)..]}\n"
         else

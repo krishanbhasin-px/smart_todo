@@ -187,5 +187,24 @@ module SmartTodo
       assert_equal(:date, todo[0].events[0].method_name)
       assert_equal(["john@example.com"], todo[0].assignees)
     end
+
+    def test_go_block_comment_does_not_corrupt_a_preceding_todo
+      # A Go block comment is a single multi-line +comments+ entry. Before the `\A`
+      # anchor fix, `^` matched at every internal line start, so the `//   inner line`
+      # inside this block comment was misdetected as a tag/continuation line and
+      # corrupted the preceding real TODO's comment with leaked raw source.
+      comments = [
+        "// TODO(on: date('2019-07-01'), to: 'me@example.com')",
+        "//   Remove this once done.",
+        "/* stray block\n//   inner line\nend of block */",
+      ]
+
+      parser = CommentParser.new(adapter: SourceAdapters::Go)
+      parser.parse_extracted(comments, "-e")
+      todos = parser.todos
+
+      assert_equal(1, todos.size)
+      assert_equal("Remove this once done.\n", todos[0].comment)
+    end
   end
 end

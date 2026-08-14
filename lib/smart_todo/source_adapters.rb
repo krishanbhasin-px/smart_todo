@@ -11,7 +11,11 @@ module SmartTodo
       # @param extension [String] a file extension including the leading dot, e.g. ".py"
       # @return [Class, nil] the adapter that handles this extension, if any.
       def for_extension(extension)
-        all.find { |adapter| adapter.extensions.include?(extension) }
+        case extension
+        when ".rb" then Ruby
+        when ".py" then Python
+        when ".go" then Go
+        end
       end
     end
   end
