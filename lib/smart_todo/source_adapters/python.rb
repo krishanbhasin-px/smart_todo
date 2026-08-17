@@ -12,6 +12,11 @@ module SmartTodo
     class Python < Base
       class Error < StandardError; end
 
+      # `-I` (isolated mode) keeps the scanned repository's directory off Python's import
+      # path. Without it, a scanned tree containing e.g. `tokenize.py` or `json.py` would
+      # shadow the stdlib modules this script imports, letting arbitrary project code
+      # execute during comment scanning.
+
       # Reads the source to scan from stdin (as bytes, so tokenize can honor a PEP 263
       # encoding declaration) and prints a JSON array of raw comment strings to stdout.
       # Tolerant of trailing syntax errors (e.g. an unterminated string at EOF), matching
@@ -85,7 +90,7 @@ module SmartTodo
         end
 
         def extract_comments(source)
-          stdout, stderr, status = Open3.capture3("python3", "-c", TOKENIZE_SCRIPT, stdin_data: source)
+          stdout, stderr, status = Open3.capture3("python3", "-I", "-c", TOKENIZE_SCRIPT, stdin_data: source)
           raise(Error, "Failed to tokenize Python source: #{stderr}") unless status.success?
 
           JSON.parse(stdout)
@@ -99,7 +104,7 @@ module SmartTodo
         #   tokenize. Callers should fall back to per-file +extract_comments_from_file+ in
         #   that case.
         def extract_comments_from_files(filepaths)
-          stdout, stderr, status = Open3.capture3("python3", "-c", BATCH_TOKENIZE_SCRIPT, *filepaths)
+          stdout, stderr, status = Open3.capture3("python3", "-I", "-c", BATCH_TOKENIZE_SCRIPT, *filepaths)
           raise(Error, "Failed to tokenize Python source: #{stderr}") unless status.success?
 
           results = JSON.parse(stdout)

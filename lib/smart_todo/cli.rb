@@ -141,14 +141,17 @@ module SmartTodo
           end
 
           return
-        rescue => e
-          @errors << "Error while batch scanning with #{adapter}: #{e.message}"
+        rescue
+          # Batching is only an optimization: fall back to scanning each file
+          # individually below. Whether that fallback succeeds or not is what
+          # determines the exit code, so no error is recorded here — the
+          # per-file loop below reports only failures that persist.
         end
       end
 
       filepaths.each do |filepath|
         begin
-          parser.parse_file(filepath)
+          parser.parse_file(filepath) unless parser.todos.any? { |todo| todo.filepath == filepath }
         rescue => e
           @errors << "Error while scanning #{filepath}: #{e.message}"
           next
