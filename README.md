@@ -71,6 +71,27 @@ RuboCop's own AST, which only parses `.rb` files. There is currently no lint-tim
 enforcement for Python or Go TODOs — only the `smart_todo` CLI's dispatch-time
 validation applies to them.
 
+Since TODO metadata is always evaluated as a Ruby expression regardless of the host
+language, `gem_release`/`gem_bump` remain RubyGems-specific — they aren't meaningful
+triggers for Python or Go dependencies. Two ecosystem-appropriate equivalents are
+available instead:
+```python
+  # TODO(on: pypi_release('django', '5.0'), to: 'john@example.com')
+  #   Upgrade once Django 5.0 is out.
+```
+```go
+  // TODO(on: go_module_release('github.com/spf13/cobra', '> 1.8', '< 2'), to: 'john@example.com')
+  //   Upgrade once a compatible cobra release is out.
+```
+`pypi_release` checks [pypi.org](https://pypi.org)'s JSON API; `go_module_release` checks
+the [Go module proxy](https://proxy.golang.org). Both accept the same `Gem::Requirement`
+version-specifier syntax as `gem_release` (e.g. `'~> 1.2'`, `'> 1', '< 2'`) so the TODO
+syntax stays consistent across ecosystems — with the caveat that exotic version formats
+(PEP 440 epochs/local versions on PyPI, Go pseudo-versions and `+incompatible` suffixes)
+aren't guaranteed to compare correctly. There is no local-manifest equivalent to
+`gem_bump` yet (i.e. nothing reads `requirements.txt`/`poetry.lock` or `go.mod`/`go.sum`)
+— only the remote release-check events above are supported for Python and Go.
+
 Documentation
 ----------------
 Please check out the GitHub [wiki](https://github.com/Shopify/smart_todo/wiki) for documentation and example on how to setup SmartTodo in your project.
