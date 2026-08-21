@@ -66,10 +66,29 @@ correctly, reusing CPython's own lexer instead of reimplementing its string/f-st
 escaping rules. Scanning `.go` files uses a small pure-Ruby tokenizer — no Go toolchain
 required.
 
-The `SmartTodoCop`/`SmartTodoCommentFormatCop` RuboCop cops remain Ruby-only: they hook
-RuboCop's own AST, which only parses `.rb` files. There is currently no lint-time
-enforcement for Python or Go TODOs — only the `smart_todo` CLI's dispatch-time
-validation applies to them.
+Linting regular TODOs
+----------------------
+The `SmartTodoCop`/`SmartTodoCommentFormatCop` RuboCop cops are Ruby-only: they hook
+RuboCop's own AST, which only parses `.rb` files. For Python and Go, use the CLI's
+`--lint` mode instead, which reports comments that read like a TODO but aren't valid
+smart TODOs:
+```sh
+smart_todo --lint app/ lib/ main.go
+```
+It prints one line per violation and exits `1` if it found any, `0` otherwise, so it
+drops into CI or a pre-commit hook next to `ruff` and `golangci-lint`:
+```
+app/api.py: Don't write regular TODO comments. Write SmartTodo compatible syntax comments. ...
+main.go: Invalid event method(s): data. ...
+```
+Neither Ruff nor golangci-lint can host this as a plugin (Ruff has no third-party rule
+API), so `--lint` is a standalone check you run alongside them rather than a plugin for
+either. It needs no `--dispatcher` or `--slack_token`, since it never notifies anyone.
+
+`--lint` and the RuboCop cops share the same rules, via `SmartTodo::Linter` — the host
+language only decides which comment marker to look for. Both check one comment at a time,
+so a smart TODO's continuation lines aren't validated. Go block comments (`/* ... */`) are
+not inspected, matching the `//`-only rule for Go smart TODOs above.
 
 Documentation
 ----------------

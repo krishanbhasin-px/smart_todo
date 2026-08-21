@@ -11,38 +11,34 @@ module SmartTodo
     def initialize(dispatcher = nil)
       @options = {}
       @errors = []
+      @violations = []
       @dispatcher = dispatcher
     end
 
     # @param args [Array<String>]
     def run(args = ARGV)
       paths = define_options.parse!(args)
-      validate_options!
+      validate_options! unless lint?
 
       paths << "." if paths.empty?
 
       filepaths = paths.flat_map { |path| normalize_path(path) }
-      comment_parsers = Hash.new { |hash, adapter| hash[adapter] = CommentParser.new(adapter: adapter) }
 
-      filepaths.group_by { |filepath| adapter_for(filepath) }.each do |adapter, adapter_filepaths|
-        scan_files(adapter, adapter_filepaths, comment_parsers[adapter])
+      if lint?
+        lint(filepaths)
+      else
+        dispatch(filepaths)
       end
 
-      todos = comment_parsers.each_value.flat_map(&:todos)
-
-      process_dispatches(process_todos(todos))
-
-      if @errors.empty?
-        0
-      else
+      unless @errors.empty?
         $stderr.puts "There were errors while checking for TODOs:\n"
 
         @errors.each do |error|
           $stderr.puts error
         end
-
-        1
       end
+
+      @errors.empty? && @violations.empty? ? 0 : 1
     end
 
     # @raise [ArgumentError] In case an option needed by a dispatcher wasn't provided.
@@ -67,6 +63,9 @@ module SmartTodo
         end
         opts.on("--repo [REPO]", "Repository name to include in notifications") do |repo|
           @options[:repo] = repo || File.basename(Dir.pwd)
+        end
+        opts.on("--lint", "Report regular TODO comments instead of dispatching smart TODOs") do
+          @options[:lint] = true
         end
       end
     end
@@ -124,6 +123,60 @@ module SmartTodo
     end
 
     private
+
+    # @return [true, false] whether to report regular TODOs rather than dispatch smart ones.
+    def lint?
+      !!@options[:lint]
+    end
+
+    # Scans every file for smart TODOs and dispatches the ones whose event has been met.
+    #
+    # @param filepaths [Array<String>]
+    # @return [void]
+    def dispatch(filepaths)
+      comment_parsers = Hash.new { |hash, adapter| hash[adapter] = CommentParser.new(adapter: adapter) }
+
+      filepaths.group_by { |filepath| adapter_for(filepath) }.each do |adapter, adapter_filepaths|
+        scan_files(adapter, adapter_filepaths, comment_parsers[adapter])
+      end
+
+      todos = comment_parsers.each_value.flat_map(&:todos)
+
+      process_dispatches(process_todos(todos))
+    end
+
+    # Reports every comment that reads like a TODO but isn't a valid smart TODO, so that
+    # regular TODOs can be caught at lint time in languages RuboCop can't parse.
+    #
+    # Works on each raw comment rather than +CommentParser+'s grouped +Todo+ objects,
+    # which keeps this at the same line-by-line granularity as +SmartTodoCop+.
+    #
+    # @param filepaths [Array<String>]
+    # @return [void]
+    def lint(filepaths)
+      linters = Hash.new { |hash, adapter| hash[adapter] = Linter.new(marker: adapter.comment_marker) }
+
+      filepaths.group_by { |filepath| adapter_for(filepath) }.each do |adapter, adapter_filepaths|
+        linter = linters[adapter]
+
+        adapter_filepaths.each do |filepath|
+          begin
+            comments = adapter.extract_comments_from_file(filepath)
+          rescue => e
+            @errors << "Error while scanning #{filepath}: #{e.message}"
+            next
+          end
+
+          comments.each do |comment|
+            next unless (message = linter.check(comment))
+
+            @violations << "#{filepath}: #{message}"
+          end
+        end
+      end
+
+      @violations.each { |violation| $stdout.puts(violation) }
+    end
 
     # @param adapter [Class] a SourceAdapters::Base subclass
     # @param filepaths [Array<String>] every file to scan with this adapter
