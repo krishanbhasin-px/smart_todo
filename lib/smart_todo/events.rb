@@ -218,6 +218,37 @@ module SmartTodo
       end
     end
 
+    # Check if the +package_name+ PyPI package was bumped locally to the +requirements+
+    # expected, by reading the project's own `uv.lock` — no network call.
+    #
+    # @example Expecting a specific version
+    #   pypi_bump('django', '5.0')
+    #
+    # @example Expecting a version in the 5.x.x series
+    #   pypi_bump('django', '> 5.2', '< 6')
+    #
+    # @param package_name [String]
+    # @param requirements [Array<String>] a list of version specifiers
+    # @return [false, String]
+    def pypi_bump(package_name, *requirements)
+      version = pypi_lock.resolved_version(package_name)
+
+      if version.nil?
+        "The PyPI package *#{package_name}* is not in your dependencies, I can't determine if " \
+          "your TODO is ready to be addressed."
+      else
+        requirement = Gem::Requirement.new(requirements)
+        parsed = parsed_version(version)
+
+        if parsed && requirement.satisfied_by?(parsed)
+          "The PyPI package *#{package_name}* was updated to version *#{version}* and " \
+            "your TODO is now ready to be addressed."
+        else
+          false
+        end
+      end
+    end
+
     # Check if the issue +issue_number+ is closed
     #
     # @param organization [String] the GitHub organization name
@@ -324,6 +355,10 @@ module SmartTodo
 
     def go_mod
       @go_mod ||= GoMod.find(Dir.pwd)
+    end
+
+    def pypi_lock
+      @pypi_lock ||= PypiLock.find(Dir.pwd)
     end
 
     def rubygems_client
