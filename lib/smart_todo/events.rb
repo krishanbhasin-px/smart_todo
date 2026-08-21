@@ -26,12 +26,14 @@ module SmartTodo
   #   TODO(on: trello_card_close(381), to: 'john@example.com')
   #
   class Events
-    def initialize(now: nil, spec_set: nil, current_ruby_version: nil)
+    def initialize(now: nil, spec_set: nil, current_ruby_version: nil, go_mod: nil, pypi_lock: nil)
       @now = now
       @spec_set = spec_set
       @rubygems_client = nil
       @github_client = nil
       @current_ruby_version = current_ruby_version
+      @go_mod = go_mod
+      @pypi_lock = pypi_lock
     end
 
     # Check if the +date+ is in the past
@@ -181,6 +183,41 @@ module SmartTodo
       "Error retrieving Go module information for *#{module_path}*."
     end
 
+    # Check if the +module_path+ Go module was bumped locally to the +requirements+ expected,
+    # by reading the project's own `go.mod` — no network call.
+    #
+    # @example Expecting a specific version
+    #   go_module_bump('github.com/spf13/cobra', '1.8.0')
+    #
+    # @example Expecting a version in the 1.x.x series
+    #   go_module_bump('github.com/spf13/cobra', '> 1.2', '< 2')
+    #
+    # @param module_path [String]
+    # @param requirements [Array<String>] a list of version specifiers (without the leading "v")
+    # @return [false, String]
+    def go_module_bump(module_path, *requirements)
+      version = go_mod.resolved_version(module_path)
+
+      case version
+      when nil
+        "The Go module *#{module_path}* is not in your dependencies, I can't determine if " \
+          "your TODO is ready to be addressed."
+      when :local_replace
+        "The Go module *#{module_path}* is locally replaced via a `replace` directive, I can't " \
+          "determine if your TODO is ready to be addressed."
+      else
+        requirement = Gem::Requirement.new(requirements)
+        parsed = parsed_version(version.delete_prefix("v"))
+
+        if parsed && requirement.satisfied_by?(parsed)
+          "The Go module *#{module_path}* was updated to version *#{version}* and " \
+            "your TODO is now ready to be addressed."
+        else
+          false
+        end
+      end
+    end
+
     # Check if the issue +issue_number+ is closed
     #
     # @param organization [String] the GitHub organization name
@@ -283,6 +320,10 @@ module SmartTodo
 
     def spec_set
       @spec_set ||= Bundler.load.specs
+    end
+
+    def go_mod
+      @go_mod ||= GoMod.find(Dir.pwd)
     end
 
     def rubygems_client
