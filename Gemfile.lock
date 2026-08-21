@@ -3,6 +3,7 @@ PATH
   specs:
     smart_todo (1.11.0)
       prism (~> 1.0)
+      toml-rb (~> 4.2)
 
 GEM
   remote: https://rubygems.org/
@@ -11,6 +12,7 @@ GEM
       public_suffix (>= 2.0.2, < 7.0)
     ast (2.4.3)
     bigdecimal (3.3.1)
+    citrus (3.0.2)
     crack (1.0.1)
       bigdecimal
       rexml
@@ -46,6 +48,9 @@ GEM
     rubocop-shopify (2.15.1)
       rubocop (~> 1.51)
     ruby-progressbar (1.13.0)
+    toml-rb (4.2.1)
+      citrus (~> 3.0, > 3.0)
+      racc (~> 1.7)
     unicode-display_width (3.1.4)
       unicode-emoji (~> 4.0, >= 4.0.4)
     unicode-emoji (4.2.0)
@@ -66,4 +71,4 @@ DEPENDENCIES
   webmock
 
 BUNDLED WITH
-   2.5.7
+  4.0.16
