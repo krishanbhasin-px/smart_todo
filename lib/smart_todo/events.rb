@@ -26,12 +26,14 @@ module SmartTodo
   #   TODO(on: trello_card_close(381), to: 'john@example.com')
   #
   class Events
-    def initialize(now: nil, spec_set: nil, current_ruby_version: nil)
+    def initialize(now: nil, spec_set: nil, current_ruby_version: nil, go_mod: nil, pypi_lock: nil)
       @now = now
       @spec_set = spec_set
       @rubygems_client = nil
       @github_client = nil
       @current_ruby_version = current_ruby_version
+      @go_mod = go_mod
+      @pypi_lock = pypi_lock
     end
 
     # Check if the +date+ is in the past
@@ -102,6 +104,144 @@ module SmartTodo
 
         if requirement.satisfied_by?(version)
           "The gem *#{gem_name}* was updated to version *#{version}* and " \
+            "your TODO is now ready to be addressed."
+        else
+          false
+        end
+      end
+    end
+
+    # Check if a new version of +package_name+ was released to PyPI with the +requirements+ expected
+    #
+    # @example Expecting a specific version
+    #   pypi_release('django', '5.0')
+    #
+    # @example Expecting a version in the 5.x.x series
+    #   pypi_release('django', '> 5.2', '< 6')
+    #
+    # @param package_name [String]
+    # @param requirements [Array<String>] a list of version specifiers
+    # @return [false, String]
+    def pypi_release(package_name, *requirements)
+      response = pypi_client.get("/pypi/#{package_name}/json")
+
+      if response.code_type < Net::HTTPClientError
+        "The PyPI package *#{package_name}* doesn't seem to exist, I can't determine if " \
+          "your TODO is ready to be addressed."
+      else
+        requirement = Gem::Requirement.new(requirements)
+        releases = JSON.parse(response.body)["releases"].keys
+
+        version = releases.find do |release|
+          parsed_version(release)&.then { |v| requirement.satisfied_by?(v) }
+        end
+
+        if version
+          "The PyPI package *#{package_name}* was released to version *#{version}* and " \
+            "your TODO is now ready to be addressed."
+        else
+          false
+        end
+      end
+    rescue Net::HTTPError, JSON::ParserError
+      "Error retrieving PyPI package information for *#{package_name}*."
+    end
+
+    # Check if a new version of the +module_path+ Go module was released with the +requirements+ expected
+    #
+    # @example Expecting a specific version
+    #   go_module_release('github.com/spf13/cobra', '1.8.0')
+    #
+    # @example Expecting a version in the 1.x.x series
+    #   go_module_release('github.com/spf13/cobra', '> 1.2', '< 2')
+    #
+    # @param module_path [String]
+    # @param requirements [Array<String>] a list of version specifiers (without the leading "v")
+    # @return [false, String]
+    def go_module_release(module_path, *requirements)
+      response = go_proxy_client.get("/#{escape_go_module_path(module_path)}/@v/list")
+
+      if response.code_type < Net::HTTPClientError
+        "The Go module *#{module_path}* doesn't seem to exist, I can't determine if " \
+          "your TODO is ready to be addressed."
+      else
+        requirement = Gem::Requirement.new(requirements)
+        versions = response.body.split("\n")
+
+        version = versions.find do |v|
+          parsed_version(v.delete_prefix("v"))&.then { |parsed| requirement.satisfied_by?(parsed) }
+        end
+
+        if version
+          "The Go module *#{module_path}* was released to version *#{version}* and " \
+            "your TODO is now ready to be addressed."
+        else
+          false
+        end
+      end
+    rescue Net::HTTPError
+      "Error retrieving Go module information for *#{module_path}*."
+    end
+
+    # Check if the +module_path+ Go module was bumped locally to the +requirements+ expected,
+    # by reading the project's own `go.mod` — no network call.
+    #
+    # @example Expecting a specific version
+    #   go_module_bump('github.com/spf13/cobra', '1.8.0')
+    #
+    # @example Expecting a version in the 1.x.x series
+    #   go_module_bump('github.com/spf13/cobra', '> 1.2', '< 2')
+    #
+    # @param module_path [String]
+    # @param requirements [Array<String>] a list of version specifiers (without the leading "v")
+    # @return [false, String]
+    def go_module_bump(module_path, *requirements)
+      version = go_mod.resolved_version(module_path)
+
+      case version
+      when nil
+        "The Go module *#{module_path}* is not in your dependencies, I can't determine if " \
+          "your TODO is ready to be addressed."
+      when :local_replace
+        "The Go module *#{module_path}* is locally replaced via a `replace` directive, I can't " \
+          "determine if your TODO is ready to be addressed."
+      else
+        requirement = Gem::Requirement.new(requirements)
+        parsed = parsed_version(version.delete_prefix("v"))
+
+        if parsed && requirement.satisfied_by?(parsed)
+          "The Go module *#{module_path}* was updated to version *#{version}* and " \
+            "your TODO is now ready to be addressed."
+        else
+          false
+        end
+      end
+    end
+
+    # Check if the +package_name+ PyPI package was bumped locally to the +requirements+
+    # expected, by reading the project's own `uv.lock` — no network call.
+    #
+    # @example Expecting a specific version
+    #   pypi_bump('django', '5.0')
+    #
+    # @example Expecting a version in the 5.x.x series
+    #   pypi_bump('django', '> 5.2', '< 6')
+    #
+    # @param package_name [String]
+    # @param requirements [Array<String>] a list of version specifiers
+    # @return [false, String]
+    def pypi_bump(package_name, *requirements)
+      version = pypi_lock.resolved_version(package_name)
+
+      if version.nil?
+        "The PyPI package *#{package_name}* is not in your dependencies, I can't determine if " \
+          "your TODO is ready to be addressed."
+      else
+        requirement = Gem::Requirement.new(requirements)
+        parsed = parsed_version(version)
+
+        if parsed && requirement.satisfied_by?(parsed)
+          "The PyPI package *#{package_name}* was updated to version *#{version}* and " \
             "your TODO is now ready to be addressed."
         else
           false
@@ -213,8 +353,48 @@ module SmartTodo
       @spec_set ||= Bundler.load.specs
     end
 
+    def go_mod
+      @go_mod ||= GoMod.find(Dir.pwd)
+    end
+
+    def pypi_lock
+      @pypi_lock ||= PypiLock.find(Dir.pwd)
+    end
+
     def rubygems_client
       @rubygems_client ||= HttpClientBuilder.build("rubygems.org")
+    end
+
+    def pypi_client
+      @pypi_client ||= HttpClientBuilder.build("pypi.org")
+    end
+
+    def go_proxy_client
+      @go_proxy_client ||= HttpClientBuilder.build("proxy.golang.org")
+    end
+
+    # The Go module proxy protocol case-encodes module paths: since module paths are
+    # case-sensitive but some underlying storage isn't, each uppercase letter is
+    # replaced with "!" followed by its lowercase form (e.g. "BurntSushi" -> "!burnt!sushi").
+    # See https://go.dev/ref/mod#module-proxy.
+    #
+    # @param module_path [String]
+    # @return [String]
+    def escape_go_module_path(module_path)
+      module_path.gsub(/[A-Z]/) { |letter| "!#{letter.downcase}" }
+    end
+
+    # PEP 440 allows version forms (epochs, local versions, ...) that +Gem::Version+
+    # doesn't understand. Such versions are treated as unparseable and skipped rather
+    # than raising, the same tolerance +gem_release+ implicitly gets from RubyGems only
+    # ever storing versions +Gem::Version+ already understands.
+    #
+    # @param version [String]
+    # @return [Gem::Version, nil]
+    def parsed_version(version)
+      Gem::Version.new(version)
+    rescue ArgumentError
+      nil
     end
 
     def github_client
