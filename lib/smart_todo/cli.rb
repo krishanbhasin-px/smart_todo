@@ -21,17 +21,16 @@ module SmartTodo
 
       paths << "." if paths.empty?
 
-      comment_parser = CommentParser.new
-      paths.each do |path|
-        normalize_path(path).each do |filepath|
-          comment_parser.parse_file(filepath)
+      filepaths = paths.flat_map { |path| normalize_path(path) }
+      comment_parsers = Hash.new { |hash, adapter| hash[adapter] = CommentParser.new(adapter: adapter) }
 
-          $stdout.print(".")
-          $stdout.flush
-        end
+      filepaths.group_by { |filepath| adapter_for(filepath) }.each do |adapter, adapter_filepaths|
+        scan_files(adapter, adapter_filepaths, comment_parsers[adapter])
       end
 
-      process_dispatches(process_todos(comment_parser.todos))
+      todos = comment_parsers.each_value.flat_map(&:todos)
+
+      process_dispatches(process_todos(todos))
 
       if @errors.empty?
         0
@@ -78,13 +77,20 @@ module SmartTodo
     end
 
     # @param path [String] a path to a file or directory
-    # @return [Array<String>] all the directories the parser should run on
+    # @return [Array<String>] all the files the parser should run on
     def normalize_path(path)
       if File.file?(path)
         [path]
       else
-        Dir["#{path}/**/*.rb"]
+        extensions = SourceAdapters.all.flat_map(&:extensions).join(",")
+        Dir["#{path}/**/*{#{extensions}}"].sort
       end
+    end
+
+    # @param filepath [String]
+    # @return [Class] a SourceAdapters::Base subclass
+    def adapter_for(filepath)
+      SourceAdapters.for_extension(File.extname(filepath)) || SourceAdapters::Ruby
     end
 
     def process_todos(todos)
@@ -118,6 +124,43 @@ module SmartTodo
     end
 
     private
+
+    # @param adapter [Class] a SourceAdapters::Base subclass
+    # @param filepaths [Array<String>] every file to scan with this adapter
+    # @param parser [CommentParser]
+    def scan_files(adapter, filepaths, parser)
+      if adapter.respond_to?(:extract_comments_from_files)
+        begin
+          comments_by_file = adapter.extract_comments_from_files(filepaths)
+
+          filepaths.each do |filepath|
+            parser.parse_extracted(comments_by_file.fetch(filepath), filepath)
+
+            $stdout.print(".")
+            $stdout.flush
+          end
+
+          return
+        rescue
+          # Batching is only an optimization: fall back to scanning each file
+          # individually below. Whether that fallback succeeds or not is what
+          # determines the exit code, so no error is recorded here — the
+          # per-file loop below reports only failures that persist.
+        end
+      end
+
+      filepaths.each do |filepath|
+        begin
+          parser.parse_file(filepath) unless parser.todos.any? { |todo| todo.filepath == filepath }
+        rescue => e
+          @errors << "Error while scanning #{filepath}: #{e.message}"
+          next
+        end
+
+        $stdout.print(".")
+        $stdout.flush
+      end
+    end
 
     # @param event_message [String] the original event message
     # @param todo [Todo] the todo object that may contain context

@@ -6,17 +6,17 @@ module SmartTodo
     attr_reader :events, :assignees, :errors
     attr_accessor :context
 
-    def initialize(source, filepath = "-e")
+    def initialize(source, filepath = "-e", marker: "#", indent: nil)
       @filepath = filepath
       @comment = +""
-      @indent = source[/^#(\s+)/, 1].length
+      @indent = indent || source[/\A#{Regexp.escape(marker)}(\s*)/, 1].length
 
       @events = []
       @assignees = []
       @context = nil
       @errors = []
 
-      parse(source[(indent + 1)..])
+      parse(source[(@indent + marker.length)..])
     end
 
     def <<(source)

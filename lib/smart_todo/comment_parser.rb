@@ -1,37 +1,40 @@
 # frozen_string_literal: true
 
 module SmartTodo
+  # Groups a source file's comments into +Todo+ objects. Comment extraction is
+  # delegated to a +SourceAdapters+ class (Ruby by default); everything past that —
+  # tag detection, continuation-line grouping, metadata parsing — is language agnostic.
   class CommentParser
     SUPPORTED_TAGS = ["TODO", "FIXME", "OPTIMIZE"].freeze
-    TAG_PATTERN = /^#\s(#{SUPPORTED_TAGS.join("|")})\(/
 
     attr_reader :todos
 
-    def initialize
+    # @param adapter [Class] a SmartTodo::SourceAdapters::Base subclass
+    def initialize(adapter: SourceAdapters::Ruby)
+      @adapter = adapter
       @todos = []
+      @tag_pattern = /\A#{Regexp.escape(adapter.comment_marker)}\s(#{SUPPORTED_TAGS.join("|")})\(/
+      @indent_pattern = /\A#{Regexp.escape(adapter.comment_marker)}(\s*)/
     end
 
-    if Prism.respond_to?(:parse_comments)
-      def parse(source, filepath = "-e")
-        parse_comments(Prism.parse_comments(source), filepath)
-      end
+    def parse(source, filepath = "-e")
+      parse_comments(@adapter.extract_comments(source), filepath)
+    end
 
-      def parse_file(filepath)
-        parse_comments(Prism.parse_file_comments(filepath), filepath)
-      end
-    else
-      def parse(source, filepath = "-e")
-        parse_comments(Prism.parse(source, filepath).comments, filepath)
-      end
+    def parse_file(filepath)
+      parse_comments(@adapter.extract_comments_from_file(filepath), filepath)
+    end
 
-      def parse_file(filepath)
-        parse_comments(Prism.parse_file(filepath).comments, filepath)
-      end
+    # @param comments [Array<String>] comments already extracted by the adapter, e.g. via
+    #   a batch extraction method like +Python.extract_comments_from_files+.
+    # @param filepath [String]
+    def parse_extracted(comments, filepath)
+      parse_comments(comments, filepath)
     end
 
     class << self
-      def parse(source)
-        parser = new
+      def parse(source, adapter: SourceAdapters::Ruby)
+        parser = new(adapter: adapter)
         parser.parse(source)
         parser.todos
       end
@@ -39,29 +42,17 @@ module SmartTodo
 
     private
 
-    if defined?(Prism::InlineComment)
-      def inline?(comment)
-        comment.is_a?(Prism::InlineComment)
-      end
-    else
-      def inline?(comment)
-        comment.type == :inline
-      end
-    end
-
     def parse_comments(comments, filepath)
       current_todo = nil
+      marker_length = @adapter.comment_marker.length
 
-      comments.each do |comment|
-        next unless inline?(comment)
-
-        source = comment.location.slice
-
-        if source.match?(TAG_PATTERN)
+      comments.each do |source|
+        if source.match?(@tag_pattern)
           todos << current_todo if current_todo
-          current_todo = Todo.new(source, filepath)
-        elsif current_todo && (indent = source[/^#(\s*)/, 1].length) && (indent - current_todo.indent == 2)
-          current_todo << "#{source[(indent + 1)..]}\n"
+          indent = source[@indent_pattern, 1].length
+          current_todo = Todo.new(source, filepath, marker: @adapter.comment_marker, indent: indent)
+        elsif current_todo && (indent = source[@indent_pattern, 1]&.length) && (indent - current_todo.indent == 2)
+          current_todo << "#{source[(indent + marker_length)..]}\n"
         else
           todos << current_todo if current_todo
           current_todo = nil
