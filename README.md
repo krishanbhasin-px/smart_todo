@@ -88,9 +88,21 @@ the [Go module proxy](https://proxy.golang.org). Both accept the same `Gem::Requ
 version-specifier syntax as `gem_release` (e.g. `'~> 1.2'`, `'> 1', '< 2'`) so the TODO
 syntax stays consistent across ecosystems — with the caveat that exotic version formats
 (PEP 440 epochs/local versions on PyPI, Go pseudo-versions and `+incompatible` suffixes)
-aren't guaranteed to compare correctly. There is no local-manifest equivalent to
-`gem_bump` yet (i.e. nothing reads `requirements.txt`/`poetry.lock` or `go.mod`/`go.sum`)
-— only the remote release-check events above are supported for Python and Go.
+aren't guaranteed to compare correctly. `pypi_bump`/`go_module_bump` are the local-manifest equivalents of `gem_bump`
+for Python and Go — no network call, reading the project's own lockfile:
+```python
+  # TODO(on: pypi_bump('django', '5.0'), to: 'john@example.com')
+  #   Upgrade once our project's own uv.lock has picked up Django 5.0.
+```
+```go
+  // TODO(on: go_module_bump('github.com/spf13/cobra', '> 1.8', '< 2'), to: 'john@example.com')
+  //   Upgrade once our project's own go.mod has picked up a compatible cobra release.
+```
+`pypi_bump` reads `uv.lock` (located by walking up from the current directory
+for `pyproject.toml`) — other Python lockfile formats (`poetry.lock`,
+`Pipfile.lock`, `requirements.txt`) aren't supported. `go_module_bump` hand-parses
+`go.mod`'s `require` and `replace` directives, walking up from the current
+directory the same way — no Go toolchain required.
 
 Documentation
 ----------------
