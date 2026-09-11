@@ -34,6 +34,34 @@ module SmartTodo
       end
     end
 
+    def test_scans_toml_files_alongside_source_files
+      Dir.mktmpdir do |dir|
+        File.write(File.join(dir, "hello.rb"), <<~RUBY)
+          # TODO(on: date('2015-03-01'), to: 'ruby@example.com')
+          #   Ruby TODO.
+          def hello
+          end
+        RUBY
+
+        File.write(File.join(dir, "pyproject.toml"), <<~TOML)
+          [project]
+          # TODO(on: date('2015-03-01'), to: 'toml@example.com')
+          #   TOML TODO.
+          requires-python = ">=3.10"
+        TOML
+
+        cli = CLI.new
+        output, = capture_io do
+          assert_equal(0, cli.run([dir, "--slack_token", "123", "--fallback_channel", "#general"]))
+        end
+
+        assert_includes(output, "hello.rb")
+        assert_includes(output, "Ruby TODO.")
+        assert_includes(output, "pyproject.toml")
+        assert_includes(output, "TOML TODO.")
+      end
+    end
+
     def test_falls_back_to_ruby_for_an_explicit_file_with_an_unrecognized_extension
       Dir.mktmpdir do |dir|
         path = File.join(dir, "Rakefile")
