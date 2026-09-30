@@ -7,6 +7,7 @@ require "smart_todo/source_adapters/base"
 require "smart_todo/source_adapters/ruby"
 require "smart_todo/source_adapters/python"
 require "smart_todo/source_adapters/go"
+require "smart_todo/source_adapters/toml"
 require "smart_todo/source_adapters"
 
 module SmartTodo

@@ -5,7 +5,7 @@ module SmartTodo
     class << self
       # @return [Array<Class>] every registered adapter.
       def all
-        [Ruby, Python, Go]
+        [Ruby, Python, Go, Toml]
       end
 
       # @param extension [String] a file extension including the leading dot, e.g. ".py"
@@ -15,6 +15,7 @@ module SmartTodo
         when ".rb" then Ruby
         when ".py" then Python
         when ".go" then Go
+        when ".toml" then Toml
         end
       end
     end

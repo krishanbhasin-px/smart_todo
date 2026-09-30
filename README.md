@@ -42,10 +42,10 @@ When the TODO's event is met (i.e. a certain date is reached), the TODO's assign
 
 Multi-language scanning
 ------------------------
-SmartTodo can scan Ruby, Python, and Go source in the same run — pass a directory
-containing any mix of `.rb`, `.py`, and `.go` files and each is matched against its own
-comment syntax (`#` for Ruby/Python, `//` line comments for Go — Go TODOs must use `//`,
-not `/* */` block comments). Only comment *extraction* is
+SmartTodo can scan Ruby, Python, Go, and TOML sources in the same run — pass a directory
+containing any mix of `.rb`, `.py`, `.go`, and `.toml` files and each is matched against its
+own comment syntax (`#` for Ruby/Python/TOML, `//` line comments for Go — Go TODOs must use
+`//`, not `/* */` block comments). Only comment *extraction* is
 language-specific; the `on: ..., to: ...` metadata is always parsed as a small Ruby
 expression, so the syntax above is identical regardless of which language the comment
 lives in — including in a Python file:
@@ -61,14 +61,20 @@ or a Go file:
   //   The API provider is modifying its endpoint, we need to modify our code.
   func apiCall() {}
 ```
+or a TOML file, which is useful for TODOs about configuration itself rather than code:
+```toml
+  # TODO(on: date('2019-07-01'), to: 'john@example.com')
+  #   Python 3.10 is end-of-life, raise this floor.
+  requires-python = ">=3.10"
+```
 Scanning `.py` files shells out to `python3` (required on `PATH`) to tokenize comments
 correctly, reusing CPython's own lexer instead of reimplementing its string/f-string
-escaping rules. Scanning `.go` files uses a small pure-Ruby tokenizer — no Go toolchain
-required.
+escaping rules. Scanning `.go` and `.toml` files uses a small pure-Ruby tokenizer — no Go
+toolchain or TOML gem required (the TOML gems discard comments anyway).
 
 The `SmartTodoCop`/`SmartTodoCommentFormatCop` RuboCop cops remain Ruby-only: they hook
 RuboCop's own AST, which only parses `.rb` files. There is currently no lint-time
-enforcement for Python or Go TODOs — only the `smart_todo` CLI's dispatch-time
+enforcement for Python, Go, or TOML TODOs — only the `smart_todo` CLI's dispatch-time
 validation applies to them.
 
 Documentation
